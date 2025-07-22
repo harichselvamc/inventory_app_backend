@@ -1,10 +1,14 @@
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, HTTPException, Depends, Query
 from sqlalchemy.orm import Session
 from database import SessionLocal, init_db
+import crud, schemas
+from cache import cached_health_status
 from crud import get_products_with_sno
 from fastapi.responses import JSONResponse
 from functools import lru_cache
 import time
+
+
 app = FastAPI(title="Inventory API", version="2.0")
 init_db()
 
@@ -20,18 +24,7 @@ def get_db():
 @app.get("/health")
 def health_check():
     return cached_health_status()
-# In-memory cache with 10s expiration
-product_cache = {"timestamp": 0, "data": []}
-CACHE_TTL = 10
 
-@app.get("/products")
-def list_products(db: Session = Depends(get_db)):
-    global product_cache
-    now = time.time()
-    if now - product_cache["timestamp"] > CACHE_TTL:
-        product_cache["data"] = get_products_with_sno(db)
-        product_cache["timestamp"] = now
-    return JSONResponse(content=product_cache["data"])
 # Product Endpoints
 @app.get("/products", response_model=list[schemas.ProductOut])
 def list_products(skip: int = 0, limit: int = 20, db: Session = Depends(get_db)):
