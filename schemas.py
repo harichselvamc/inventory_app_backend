@@ -25,28 +25,9 @@ class ProductOut(ProductBase):
     id: int
 
     class Config:
-        from_attributes = True # Replaces orm_mode = True in Pydantic v2
-
-# --- Purchase Schemas ---
-
-class PurchaseBase(BaseModel):
-    """Base schema for a single purchase item."""
-    product_id: int
-    quantity: int = Field(..., gt=0, description="Quantity must be positive")
-
-class PurchaseCreate(PurchaseBase):
-    """Schema for creating a single purchase record (used internally)."""
-    pass
-
-class PurchaseOut(PurchaseBase):
-    """Schema for representing a purchase in API responses."""
-    id: int
-    date: datetime
-
-    class Config:
         from_attributes = True
 
-# --- Bulk Purchase Schemas ---
+# --- Purchase Schemas ---
 
 class BulkPurchaseItem(BaseModel):
     """Defines a single item within a bulk purchase request."""
@@ -56,7 +37,6 @@ class BulkPurchaseItem(BaseModel):
 class BulkPurchaseRequest(BaseModel):
     """The request model for the bulk purchase endpoint."""
     items: List[BulkPurchaseItem]
-
 
 # --- Reporting Schemas ---
 

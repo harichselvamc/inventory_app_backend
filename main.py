@@ -1,17 +1,19 @@
-from fastapi import FastAPI, HTTPException, Depends, Query
+from fastapi import FastAPI, HTTPException, Depends
 from sqlalchemy.orm import Session
 from typing import List, Optional
 
-from database import SessionLocal, init_db, engine
-from models import Base
-import crud, schemas
+# Import the correct model and schema modules
+import models
+import schemas
+import crud
+from database import SessionLocal, engine
 
-# Create all database tables on startup
-Base.metadata.create_all(bind=engine)
+# Create all database tables on startup using the Base from models
+models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
     title="Inventory API",
-    version="2.1",
+    version="3.0",
     description="A robust API for managing inventory, sales, and reporting.",
 )
 
@@ -82,26 +84,38 @@ def make_bulk_purchase(request: schemas.BulkPurchaseRequest, db: Session = Depen
     Processes a cart of items in a single, atomic transaction.
     Stock levels are checked for all items before any changes are made.
     """
-    with db.begin_nested(): # Use a nested transaction for atomicity
-        product_ids = [item.product_id for item in request.items]
-        products = db.query(schemas.Product).filter(schemas.Product.id.in_(product_ids)).all()
-        product_map = {p.id: p for p in products}
+    try:
+        with db.begin_nested(): # Use a nested transaction for atomicity
+            product_ids = [item.product_id for item in request.items]
+            # CORRECTED LINE: Query the 'models.Product' table, not the schema
+            products = db.query(models.Product).filter(models.Product.id.in_(product_ids)).all()
+            product_map = {p.id: p for p in products}
 
-        # --- Validation Step ---
-        for item in request.items:
-            product = product_map.get(item.product_id)
-            if not product:
-                raise HTTPException(status_code=404, detail=f"Product with ID {item.product_id} not found.")
-            if product.stock < item.quantity:
-                raise HTTPException(status_code=400, detail=f"Insufficient stock for '{product.name}'. Available: {product.stock}, Requested: {item.quantity}.")
+            # --- Validation Step ---
+            for item in request.items:
+                product = product_map.get(item.product_id)
+                if not product:
+                    raise HTTPException(status_code=404, detail=f"Product with ID {item.product_id} not found.")
+                if product.stock < item.quantity:
+                    raise HTTPException(status_code=400, detail=f"Insufficient stock for '{product.name}'. Available: {product.stock}, Requested: {item.quantity}.")
 
-        # --- Processing Step ---
-        for item in request.items:
-            product = product_map[item.product_id]
-            product.stock -= item.quantity
+            # --- Processing Step ---
+            for item in request.items:
+                product = product_map[item.product_id]
+                product.stock -= item.quantity
+            
+            crud.record_bulk_purchase(db, request.items)
         
-        crud.record_bulk_purchase(db, request.items)
+        # Only commit if the nested block succeeded
         db.commit()
+
+    except Exception as e:
+        db.rollback() # Rollback any changes if an error occurred
+        logging.error(f"Bulk purchase failed: {e}")
+        # Re-raise the original exception or a generic one
+        if isinstance(e, HTTPException):
+            raise e
+        raise HTTPException(status_code=500, detail="An internal error occurred during the transaction.")
 
     return {"message": "Purchase successful. Inventory updated."}
 
@@ -114,7 +128,6 @@ def get_sales_report(skip: int = 0, limit: int = 100, db: Session = Depends(get_
     purchases = crud.get_sales_history(db, skip=skip, limit=limit)
     report = []
     for p in purchases:
-        # This assumes the related product exists. For robustness, you could handle cases where it might not.
         if p.product:
             report.append(schemas.SaleReportItem(
                 product_name=p.product.name,
