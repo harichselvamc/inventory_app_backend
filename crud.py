@@ -32,3 +32,9 @@ def create_purchase(db: Session, data: PurchaseIn):
     db.commit()
     db.refresh(purchase)
     return purchase
+def get_products_with_sno(db: Session, skip: int = 0, limit: int = 20):
+    products = db.query(Product).offset(skip).limit(limit).all()
+    return [
+        {"sno": i + 1, "id": p.id, "name": p.name, "stock": p.stock, "price": p.price}
+        for i, p in enumerate(products)
+    ]
